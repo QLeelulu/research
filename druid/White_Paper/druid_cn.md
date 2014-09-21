@@ -135,13 +135,26 @@ Druid的协调节点有Zookeeper和MySQL这两个额外的依赖，协调节点�
 
 ## 4. 存储格式
 
-Druid中的数据表（称为数据源）是一个时间序列事件数据的集合，并分割到一组segment中，而每一个segment通常是0.5-1千万行。在形式上，我们定义一个segment为跨越一段时间的数据行的集合。Segment是Druid里面的基本存储单元，复制和分布都是在segment基本之上进行的。
+Druid中的数据表（称为数据源）是一个时间序列事件数据的集合，并分割到一组segment中，而每一个segment通常是0.5-1千万行。在形式上，我们定义一个segment为跨越一段时间的数据行的集合。Segment是Druid里面的基本存储单元，复制和分布都是在segment基础之上进行的。
 
 Druid always requires a timestamp column as a method of sim- plifying data distribution policies, data retention policies, and first- level query pruning. Druid partitions its data sources into well- defined time intervals, typically an hour or a day, and may further partition on values from other columns to achieve the desired seg- ment size. The time granularity to partition segments is a function of data volume and time range. A data set with timestamps spread over a year is better partitioned by day, and a data set with times- tamps spread over a day is better partitioned by hour.
 
+Segments are uniquely identified by a data source identifer, the time interval of the data, and a version string that increases when- ever a new segment is created. The version string indicates the freshness of segment data; segments with later versions have newer views of data (over some time range) than segments with older ver- sions. This segment metadata is used by the system for concur- rency control; read operations always access data in a particular time range from the segments with the latest version identifiers for that time range.
+Druid segments are stored in a column orientation. Given that Druid is best used for aggregating event streams (all data going into Druid must have a timestamp), the advantages of storing aggregate information as columns rather than rows are well documented [1]. Column storage allows for more efficient CPU usage as only what is needed is actually loaded and scanned. In a row oriented data store, all columns associated with a row must be scanned as part of an aggregation. The additional scan time can introduce signficant performance degradations [1].
+Druid has multiple column types to represent various data for- mats. Depending on the column type, different compression meth- ods are used to reduce the cost of storing a column in memory and on disk. In the example given in Table 1, the page, user, gender, and city columns only contain strings. Storing strings directly is unnecessarily costly and string columns can be dictionary encoded instead. Dictionary encoding is a common method to compress data and has been used in other data stores such as PowerDrill [17]. In the example in Table 1, we can map each page to a unique integer identifier.```Justin Bieber -> 0Ke$ha -> 1
+```
 
+This mapping allows us to represent the page column as an in- teger array where the array indices correspond to the rows of the original data set. For the page column, we can represent the unique pages as follows:
 
+```
+[0, 0, 1, 1]
+```
 
+The resulting integer array lends itself very well to compression methods. Generic compression algorithms on top of encodings are extremely common in column-stores. Druid uses the LZF [24] com- pression algorithm.Similar compression methods can be applied to numeric columns. For example, the characters added and characters removed columns in Table 1 can also be expressed as individual arrays.
+```Characters Added   -> [1800, 2912, 1953, 3194]Characters Removed -> [25, 42, 17, 170]
+```
+
+In this case, we compress the raw values as opposed to their dictionary representations.
 
 
 
