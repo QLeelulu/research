@@ -137,25 +137,50 @@ Druid的协调节点有Zookeeper和MySQL这两个额外的依赖，协调节点�
 
 Druid中的数据表（称为数据源）是一个时间序列事件数据的集合，并分割到一组segment中，而每一个segment通常是0.5-1千万行。在形式上，我们定义一个segment为跨越一段时间的数据行的集合。Segment是Druid里面的基本存储单元，复制和分布都是在segment基础之上进行的。
 
-Druid always requires a timestamp column as a method of sim- plifying data distribution policies, data retention policies, and first- level query pruning. Druid partitions its data sources into well- defined time intervals, typically an hour or a day, and may further partition on values from other columns to achieve the desired seg- ment size. The time granularity to partition segments is a function of data volume and time range. A data set with timestamps spread over a year is better partitioned by day, and a data set with times- tamps spread over a day is better partitioned by hour.
+Druid总是需要一个时间戳的列来作为简化数据分布策略、数据保持策略、与第一级查询剪支(first-level query pruning)的方法。Druid分隔它的数据源到明确定义的时间间隔中，通常是一个小时或者一天，或者进一步的根据其他列的值来进行分隔，以达到期望的segment大小。segment分隔的时间粒度是一个数据大小和时间范围的函数。一个超过一年的数据集最好按天分隔，而一个超过一天的数据集则最好按小时分隔。
 
-Segments are uniquely identified by a data source identifer, the time interval of the data, and a version string that increases when- ever a new segment is created. The version string indicates the freshness of segment data; segments with later versions have newer views of data (over some time range) than segments with older ver- sions. This segment metadata is used by the system for concur- rency control; read operations always access data in a particular time range from the segments with the latest version identifiers for that time range.
-Druid segments are stored in a column orientation. Given that Druid is best used for aggregating event streams (all data going into Druid must have a timestamp), the advantages of storing aggregate information as columns rather than rows are well documented [1]. Column storage allows for more efficient CPU usage as only what is needed is actually loaded and scanned. In a row oriented data store, all columns associated with a row must be scanned as part of an aggregation. The additional scan time can introduce signficant performance degradations [1].
-Druid has multiple column types to represent various data for- mats. Depending on the column type, different compression meth- ods are used to reduce the cost of storing a column in memory and on disk. In the example given in Table 1, the page, user, gender, and city columns only contain strings. Storing strings directly is unnecessarily costly and string columns can be dictionary encoded instead. Dictionary encoding is a common method to compress data and has been used in other data stores such as PowerDrill [17]. In the example in Table 1, we can map each page to a unique integer identifier.```Justin Bieber -> 0Ke$ha -> 1
+Segment是由一个数据源标识符、数据的时间范围、和一个新segment创建时自增的版本字符串来组合起来作为唯一标识符。版本字符串表明了segment的新旧程度，高版本号的segment的数据比低版本号的segment的数据要新。这些segment的元数据用于系统的并发控制，读操作总是读取特定时间范围内有最新版本标识符的那些segment。
+Druid的segment存储在一个面向列的存储中。由于Druid是适用于聚合计算事件数据流（所有的数据进入到Druid中都必须有一个时间戳），使用列式来存储聚合信息比使用行存储更好这个是[有据可查][1]的。列式存储可以有更好的CPU利用率，只需加载和扫描那些它真正需要的数据。而基于行的存储，在一个聚合计算中相关行中所有列都必须被扫描，这些附加的扫描时间会引起性能恶化。Druid有多种列类型来表示不同的数据格式。根据列的类型，会使用不同的压缩算法来降低一个列存储在内存和磁盘的成本。在表1提供的示例中，page, user, gender, 和 city 列都只包含字符串，直接存储字符串的成本很高而且没有必要，可以使用字典编码（Dictionary encoding）来代替。字典编码是一个常用的数据压缩算法，也已经用在类似[PowerDrill][17]这样的数据存储上。在表1的示例中，我们可以将每一个page映射到一个唯一的整数标识符上。```Justin Bieber -> 0Ke$ha -> 1
 ```
 
-This mapping allows us to represent the page column as an in- teger array where the array indices correspond to the rows of the original data set. For the page column, we can represent the unique pages as follows:
+这个映射关系允许我们使用一个整数数组来表示page列，这个数组索引了原始数据集的相应的行。对于page列，我们可以用以下的方式来表示：
 
 ```
 [0, 0, 1, 1]
 ```
 
-The resulting integer array lends itself very well to compression methods. Generic compression algorithms on top of encodings are extremely common in column-stores. Druid uses the LZF [24] com- pression algorithm.Similar compression methods can be applied to numeric columns. For example, the characters added and characters removed columns in Table 1 can also be expressed as individual arrays.
+这个整数数组结果使得它可以很好的应用压缩算法。在编码的基础上使用常用的压缩算法在列式存储中很常见。Druid使用的[LZF][24]压缩算法。类似的压缩算法也可以应用于数字列，例如，表1中增加的字符数和删除的字符数这两列也可以使用独立的数组来表示：
 ```Characters Added   -> [1800, 2912, 1953, 3194]Characters Removed -> [25, 42, 17, 170]
 ```
 
-In this case, we compress the raw values as opposed to their dictionary representations.
+在这种情况下，我们以和它们字典描述相反的方式来压缩这些原始值。
 
+## 4.1 索引过滤数据
+
+In many real world OLAP workflows, queries are issued for the aggregated results of some set of metrics where some set of di- mension specifications are met. An example query is: “How many Wikipedia edits were done by users in San Francisco who are also male?” This query is filtering the Wikipedia data set in Table 1 based on a Boolean expression of dimension values. In many real world data sets, dimension columns contain strings and metric columns contain numeric values. Druid creates additional lookup indices for string columns such that only those rows that pertain to a particular query filter are ever scanned.Let us consider the page column in Table 1. For each unique page in Table 1, we can form some representation indicating in which table rows a particular page is seen. We can store this information in a binary array where the array indices represent our rows. If a particular page is seen in a certain row, that array index is marked as 1. For example:
+```Justin Bieber -> rows [0, 1] -> [1][1][0][0]Ke$ha         -> rows [2, 3] -> [0][0][1][1]
+```Justin Bieber is seen in rows 0 and 1. This mapping of col- umn values to row indices forms an inverted index [39]. To know whichrowscontainJustin BieberorKe$ha,wecanORtogether the two arrays.
+```[0][1][0][1] OR [1][0][1][0] = [1][1][1][1]
+```This approach of performing Boolean operations on large bitmap sets is commonly used in search engines. Bitmap indices for OLAP workloads is described in detail in [32]. Bitmap compression al- gorithms are a well-defined area of research [2, 44, 42] and often utilize run-length encoding. Druid opted to use the Concise algo- rithm [10]. Figure 7 illustrates the number of bytes using Concise compression versus using an integer array. The results were gen- erated on a cc2.8xlarge system with a single thread, 2G heap, 512m young gen, and a forced GC between each run. The data set is a single day’s worth of data collected from the Twitter garden hose [41] data stream. The data set contains 2,272,295 rows and 12 dimensions of varying cardinality. As an additional comparison, we also resorted the data set rows to maximize compression.
+
+![](7.png)   
+**图7. Integer array size versus Concise set size.**
+In the unsorted case, the total Concise size was 53,451,144 bytes and the total integer array size was 127,248,520 bytes. Overall, Concise compressed sets are about 42% smaller than integer ar- rays. In the sorted case, the total Concise compressed size was 43,832,884 bytes and the total integer array size was 127,248,520 bytes. What is interesting to note is that after sorting, global com- pression only increased minimally.
+
+
+## 4.2 Storage Engine
+Druid的持久化组件允许不同的存储引擎以插件的方式接入，类似于[Dynamo][12]。这些存储引擎可以将数据存储在一个完全的in-memory结果的引擎中，例如JVM堆，或者是存储于 memory-mapped 结构的存储中。Druid中存储引擎可配置更换的这个能力依赖于一个特定的应用规范。一个in-memory的存储引擎要比memory-mapped存储引擎的成本昂贵得多，但是如果对于性能特别敏感的话，in-memory存储引擎则是更好的选择。默认情况下使用的是memory-mapped存储引擎。当使用一个memory-mapped存储引擎的时候，Druid依赖于操作系统来对segment在内存中进行换入和换出操作。因为只有当segment加载到内存中了才可以被查询，所以memory-mapped存储引擎允许将最近的segment保留在内存中，而那些不会再被查询的segment则被换出。使用memory-mapped的主要缺点是当一个查询需要更多的segment并且已经超出了节点的内存容量时，在这种情况下，查询性能将会因为不断的在在内存中进行segment的换入和换出而下降。
+## 5. 查询API
+
+
+
+
+
+
+[1]: http://db.csail.mit.edu/projects/cstore/abadi-sigmod08.pdf
+[17]: http://vldb.org/pvldb/vol5/p1436_alexanderhall_vldb2012.pdf
+[24]: http://freecode.com/projects/liblzf
+[12]: http://en.wikipedia.org/wiki/Dynamo_(storage_system)
 
 
 
