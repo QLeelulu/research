@@ -169,7 +169,7 @@ In many real world OLAP workflows, queries are issued for the aggregated results
 
 
 ## 4.2 Storage Engine
-Druid的持久化组件允许不同的存储引擎以插件的方式接入，类似于[Dynamo][12]。这些存储引擎可以将数据存储在一个完全的in-memory结果的引擎中，例如JVM堆，或者是存储于 memory-mapped 结构的存储中。Druid中存储引擎可配置更换的这个能力依赖于一个特定的应用规范。一个in-memory的存储引擎要比memory-mapped存储引擎的成本昂贵得多，但是如果对于性能特别敏感的话，in-memory存储引擎则是更好的选择。默认情况下使用的是memory-mapped存储引擎。当使用一个memory-mapped存储引擎的时候，Druid依赖于操作系统来对segment在内存中进行换入和换出操作。因为只有当segment加载到内存中了才可以被查询，所以memory-mapped存储引擎允许将最近的segment保留在内存中，而那些不会再被查询的segment则被换出。使用memory-mapped的主要缺点是当一个查询需要更多的segment并且已经超出了节点的内存容量时，在这种情况下，查询性能将会因为不断的在在内存中进行segment的换入和换出而下降。
+Druid的持久化组件允许不同的存储引擎以插件的方式接入，类似于[Dynamo][12]。这些存储引擎可以将数据存储在一个完全的in-memory结构的引擎中，例如JVM heap，或者是存储于 memory-mapped 结构的存储中。Druid中存储引擎可配置更换的这个能力依赖于一个特定的应用规范。一个in-memory的存储引擎要比memory-mapped存储引擎的成本昂贵得多，但是如果对于性能特别敏感的话，in-memory存储引擎则是更好的选择。默认情况下使用的是memory-mapped存储引擎。当使用一个memory-mapped存储引擎的时候，Druid依赖于操作系统来对segment在内存中进行换入和换出操作。因为只有当segment加载到内存中了才可以被查询，所以memory-mapped存储引擎允许将最近的segment保留在内存中，而那些不会再被查询的segment则被换出。使用memory-mapped的主要缺点是当一个查询需要更多的segment并且已经超出了节点的内存容量时，在这种情况下，查询性能将会因为不断的在在内存中进行segment的换入和换出而下降。
 ## 5. 查询API
 
 
