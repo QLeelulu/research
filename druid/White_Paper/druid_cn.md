@@ -1,6 +1,15 @@
-# Druid (实时统计分析数据存储)
+# Druid (大数据实时统计分析数据存储)
 
 **_原文见此_**: [Druid White Paper](http://static.druid.io/docs/druid.pdf)
+
+```
+这里是招聘广告：
+我们是做RTB广告和数据统计分析的产品的，
+热切渴望有大数据实时统计分析与存储经验的人才，
+坐标在广州天河，
+更多信息请访问 http://www.sunteng.com/
+```
+
 
 ## 摘要
 
